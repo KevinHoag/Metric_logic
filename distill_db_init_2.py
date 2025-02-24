@@ -121,7 +121,7 @@ def main():
     parser.add_argument(
         '--port',
         type=int,
-        default=28000,
+        default=27017,
         help='MongoDB port'
     )
     parser.add_argument(

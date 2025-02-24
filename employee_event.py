@@ -1,6 +1,6 @@
 from functools import wraps
 from typing import Dict, List, Any, Callable, Type, get_type_hints
-from datetime import datetime
+import datetime
 import inspect
 from db import MongoDB
 
@@ -44,11 +44,11 @@ class ValidateParams:
                         raise TypeError(
                             f"Parameter '{key}' must be of type {param_types[key].__name__}"
                         )
-                setattr(instance, key, value)
-                
+                    setattr(instance, key, value)
+                    
             return func(instance, *args, **kwargs)
         return wrapper
-
+    
 class CustomerEvent:
     def __init__(self):
         self.required_params = ["params_visitDateFrom", "params_visitDateTo", "host", "port"]
@@ -91,6 +91,7 @@ class CustomerEvent:
         ]
 
         face_events_list = []
+        total = 0
         for camera_group_list in camera_group_lists:
             camera_list = camera_group_list.get("camera")
             camera_ids = [camera.get("camera_id") for camera in camera_list]
@@ -111,13 +112,14 @@ class CustomerEvent:
                         "$group": {
                             "_id": "$face_id",
                             "visit_count": {"$sum": 1},
-                            "group_id": {"$first": camera_group_list.get("params_group_id")}
+                            "group_id": {"$first": camera_group_list.get("group_id")},
                         }
                     }
                 ]
             )["result"]
-
             face_events_list.extend(daily_stat for daily_stat in face_events_query)
+
+        total = len(face_events_list)
         face_events_list.sort(key=lambda x: x.get(kwargs.get("params_sortBy")), reverse=kwargs.get("params_order") == "desc")
         face_events_list = face_events_list[0:int(kwargs.get("params_pageSize")) * int(kwargs.get("params_page"))]
         face_id_lists = [daily_stat.get("_id") for daily_stat in face_events_list]
@@ -131,6 +133,16 @@ class CustomerEvent:
             }
         )["result"]
 
+        if kwargs.get('params_search') != '':
+            for face_identity in face_identities_list:
+                check = False
+                for value in face_identity.get('metadata').values():
+                    if value == kwargs.get('params_search'):
+                        check = True
+                        break
+                if not check:
+                    face_identities_list.remove(face_identity)
+
         for face_identity in face_identities_list:
             face_events_query= mongo_client.find(
                 db_name=kwargs["db"],
@@ -140,27 +152,40 @@ class CustomerEvent:
                     "timestamp": face_identity.get("last_seen")
                 }
             )["result"][0]
-
             face_identity['track_id'] = face_events_query.get('track_id')
             face_identity['event_id'] = face_events_query.get('event_id')
 
         results_face_event = face_events_list.copy()
         for item in results_face_event:
+            item.pop("group_id", None)
+            item['id'] = item.pop("_id", None)
             for group in group_list:
                 if item.get("group_id") == group.get("group_id"):
                     item["groupName"] = group.get("name")
                     break
             for face_identity in face_identities_list:
-                if item.get("_id") == face_identity.get("face_id"):
-                    item["trackId"] = face_identity.get("track_id")
+                if item.get("id") == face_identity.get("face_id"):
                     item["eventId"] = face_identity.get("event_id")
+                    item["trackId"] = face_identity.get("track_id")
                     item['label'] = face_identity.get('labels')
+                    item['type'] = 'employee'
                     item['lastVisitDay'] = (datetime.datetime.now() - face_identity.get('last_seen')).days
                     item['lastVisitTime'] = face_identity.get('last_seen').strftime("%Y-%m-%d %H:%M:%S")
+                    item["status"] = "identified"
+                    item['tags'] = face_identity.get('labels')
+                    item['groupId'] = face_identity.get('metadata').get('groupId')
+                    item['groupName'] = face_identity.get('metadata').get('groupName')
                     item["fullName"] = face_identity.get("username")
+                    item['phoneNumber'] = face_identity.get('metadata').get('phoneNumber')      
+                    item['notes'] = face_identity.get('metadata').get('notes')
                     break
 
-        return results_face_event
+        return {
+            "items": results_face_event,
+            "total": total,
+            "page": kwargs.get("params_page"),
+            "pageSize": kwargs.get("params_pageSize")
+        }
 
 
 class ClassSerializer:
@@ -178,30 +203,32 @@ class ClassSerializer:
 if __name__ == "__main__":
     # Example usage
     serialize_class = ClassSerializer.serialize(CustomerEvent)
-    print("Serialized Data:\n", serialize_class)
+    # print("Serialized Data:\n", serialize_class)
 
     # Deserialize the class definition
     deserialized_class = ClassSerializer.deserialize(serialize_class)
-    print("Deserialized Class:\n", inspect.getsource(deserialized_class))
+    # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
 
     # Use the deserialized class
     report = deserialized_class()
-    res = report.run(
-        username="mongoadmin",
-        password="mongoadmin",
-        host="localhost",
-        port="27017",
-        db="distill_db",
-        auth="admin",
-        params_page = 1,
-        params_pageSize = 2,
-        params_search = "",
-        params_status = "identified",
-        params_sortBy = "visit_count",
-        params_order = "desc",
-        params_groupIds = ["CG-5", "CG-2"],
-        params_visitDateFrom = "    ",
-        params_visitDateTo = "2025-02-17T23:59:59.999Z",
-        params_tags = ["vip", "regular"]
-    )
+    params = {
+        "username": "",
+        "password": "",
+        "host": "localhost",
+        "port": 27017,
+        "db": "distill_db",
+        "auth": "admin",
+        "params_page": 1,
+        "params_pageSize": 2,
+        "params_search": "",
+        "params_status": "identified",
+        "params_sortBy": "visit_count",
+        "params_order": "desc",
+        "params_groupIds": ["CG-5", "CG-2"],
+        "params_visitDateFrom": "2021-02-17T23:59:59.999Z",
+        "params_visitDateTo": "2025-02-17T23:59:59.999Z",
+        "params_tags": ["vip", "regular"]
+    }
+
+    res = report.run(**params)
     print(res)

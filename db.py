@@ -115,19 +115,19 @@ class MongoDB:
             db_name: str,
             col_name: str
         ):
-        """_summary_
+        """summary
 
         Args:
-            db_name (str): _description_
-            col_name (str): _description_
+            db_name (str): description
+            col_name (str): description
 
         Returns:
-            _type_: _description_
+            type: description
         """        
         try:
             collection_names = [n for n in self.client[db_name].list_collection_names()]
-            if collection in collection_names:
-                col = self.db[collection]
+            if col_name in collection_names:
+                col = self.db[col_name]
                 col.drop()
                 return {
                     "status": True

@@ -44,11 +44,11 @@ class ValidateParams:
                         raise TypeError(
                             f"Parameter '{key}' must be of type {param_types[key].__name__}"
                         )
-                    setattr(instance, key, value)
-                    
+                setattr(instance, key, value)
+                
             return func(instance, *args, **kwargs)
         return wrapper
-    
+
 class CustomerEvent:
     def __init__(self):
         self.required_params = ["params_visitDateFrom", "params_visitDateTo", "host", "port"]
@@ -68,23 +68,17 @@ class CustomerEvent:
         group_list = mongo_client.find(
             db_name=kwargs["db"],
             col_name="cam_groups",
-            query={
-                "group_id": {
-                    "$in": kwargs.get("params_groupIds", [])
-                }
-            }
+            query={"group_id": {"$in": kwargs.get("params_groupIds", [])}}
         )["result"]
 
         # Query cameras
         camera_group_lists = [
             {
-                "camera": [
-                    camera for camera in mongo_client.find(
-                        db_name=kwargs["db"],
-                        col_name="cameras",
-                        query={"group_id": {"$in": [group_id]}}
-                    )["result"]
-                ], 
+                "camera": mongo_client.find(
+                    db_name=kwargs["db"],
+                    col_name="cameras",
+                    query={"group_id": group_id}
+                )["result"],
                 "group_id": group_id
             }
             for group_id in kwargs.get("params_groupIds", [])
@@ -92,8 +86,7 @@ class CustomerEvent:
 
         face_events_list = []
         for camera_group_list in camera_group_lists:
-            camera_list = camera_group_list.get("camera")
-            camera_ids = [camera.get("camera_id") for camera in camera_list]
+            camera_ids = [camera["camera_id"] for camera in camera_group_list["camera"]]
             face_events_query = mongo_client.aggregate(
                 db_name=kwargs["db"],
                 col_name="face_events",
@@ -102,8 +95,8 @@ class CustomerEvent:
                         "$match": {
                             "camera_id": {"$in": camera_ids},
                             "timestamp": {
-                                "$gte": datetime.datetime.fromisoformat(kwargs.get("params_visitDateFrom")),
-                                "$lte": datetime.datetime.fromisoformat(kwargs.get("params_visitDateTo"))
+                                "$gte": datetime.fromisoformat(kwargs["params_visitDateFrom"]),
+                                "$lte": datetime.fromisoformat(kwargs["params_visitDateTo"])
                             }
                         }
                     },
@@ -111,63 +104,53 @@ class CustomerEvent:
                         "$group": {
                             "_id": "$face_id",
                             "visit_count": {"$sum": 1},
-                            "group_id": {"$first": camera_group_list.get("params_group_id")}
+                            "group_id": {"$first": camera_group_list["group_id"]}
                         }
                     }
                 ]
             )["result"]
 
-            face_events_list.extend(daily_stat for daily_stat in face_events_query)
-        face_events_list.sort(key=lambda x: x.get(kwargs.get("params_sortBy")), reverse=kwargs.get("params_order") == "desc")
-        face_events_list = face_events_list[0:int(kwargs.get("params_pageSize")) * int(kwargs.get("params_page"))]
-        face_id_lists = [daily_stat.get("_id") for daily_stat in face_events_list]
+            face_events_list.extend(face_events_query)
+
+        # Sorting and pagination
+        face_events_list.sort(key=lambda x: x.get(kwargs["params_sortBy"]), reverse=kwargs.get("params_order", "asc") == "desc")
+        face_events_list = face_events_list[0:int(kwargs["params_pageSize"]) * int(kwargs["params_page"])]
+
+        face_id_lists = [item["_id"] for item in face_events_list]
         face_identities_list = mongo_client.find(
             db_name=kwargs["db"],
             col_name="face_identities",
-            query={
-                "face_id": {
-                    "$in": face_id_lists
-                }
-            }
+            query={"face_id": {"$in": face_id_lists}}
         )["result"]
 
-        if kwargs.get('search') is not '':
-            for face_identity in face_identities_list:
-                for value in face_events_list.metadata.get_values():
-                    if value == kwargs.get('search'):
-                        continue
-                face_identities_list.remove(face_identity)
-
         for face_identity in face_identities_list:
-            face_events_query= mongo_client.find(
+            face_events_query = mongo_client.find(
                 db_name=kwargs["db"],
                 col_name="face_events",
-                query={
-                    "face_id": face_identity.get("face_id"),
-                    "timestamp": face_identity.get("last_seen")
-                }
-            )["result"][0]
-
-            face_identity['track_id'] = face_events_query.get('track_id')
-            face_identity['event_id'] = face_events_query.get('event_id')
+                query={"face_id": face_identity["face_id"], "timestamp": face_identity["last_seen"]}
+            )["result"]
+            if face_events_query:
+                face_identity["track_id"] = face_events_query[0].get("track_id")
+                face_identity["event_id"] = face_events_query[0].get("event_id")
 
         results_face_event = face_events_list.copy()
         for item in results_face_event:
             for group in group_list:
-                if item.get("group_id") == group.get("group_id"):
-                    item["groupName"] = group.get("name")
+                if item["group_id"] == group["group_id"]:
+                    item["groupName"] = group["name"]
                     break
             for face_identity in face_identities_list:
-                if item.get("_id") == face_identity.get("face_id"):
-                    item["trackId"] = face_identity.get("track_id")
-                    item["eventId"] = face_identity.get("event_id")
-                    item['label'] = face_identity.get('labels')
-                    item['lastVisitDay'] = (datetime.datetime.now() - face_identity.get('last_seen')).days
-                    item['lastVisitTime'] = face_identity.get('last_seen').strftime("%Y-%m-%d %H:%M:%S")
-                    item["fullName"] = face_identity.get("username")
+                if item["_id"] == face_identity["face_id"]:
+                    item["trackId"] = face_identity["track_id"]
+                    item["eventId"] = face_identity["event_id"]
+                    item["label"] = face_identity.get("labels")
+                    item["lastVisitDay"] = (datetime.now() - face_identity["last_seen"]).days
+                    item["lastVisitTime"] = face_identity["last_seen"].strftime("%Y-%m-%d %H:%M:%S")
+                    item["fullName"] = face_identity["username"]
                     break
 
         return results_face_event
+
 
 
 class ClassSerializer:
@@ -185,30 +168,33 @@ class ClassSerializer:
 if __name__ == "__main__":
     # Example usage
     serialize_class = ClassSerializer.serialize(CustomerEvent)
-    print("Serialized Data:\n", serialize_class)
+    # print("Serialized Data:\n", serialize_class)
 
     # Deserialize the class definition
     deserialized_class = ClassSerializer.deserialize(serialize_class)
-    print("Deserialized Class:\n", inspect.getsource(deserialized_class))
+    # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
 
     # Use the deserialized class
     report = deserialized_class()
-    res = report.run(
-        username="mongoadmin",
-        password="mongoadmin",
-        host="localhost",
-        port="27017",
-        db="distill_db",
-        auth="admin",
-        params_page = 1,
-        params_pageSize = 2,
-        params_search = "",
-        params_status = "identified",
-        params_sortBy = "visit_count",
-        params_order = "desc",
-        params_groupIds = ["CG-5", "CG-2"],
-        params_visitDateFrom = "    ",
-        params_visitDateTo = "2025-02-17T23:59:59.999Z",
-        params_tags = ["vip", "regular"]
-    )
+    params = {
+        "username": "",
+        "password": "",
+        "host": "localhost",
+        "port": 27017,
+        "db": "distill_db",
+        "auth": "admin",
+        "params_page": 1,
+        "params_pageSize": 2,
+        "params_search": "",
+        "params_status": "identified",
+        "params_sortBy": "visit_count",
+        "params_order": "desc",
+        "params_groupIds": ["CG-5", "CG-2"],
+        "params_visitDateFrom": "2024-02-17T23:59:59.999Z",
+        "params_visitDateTo": "2025-02-17T23:59:59.999Z",
+        "params_tags": ["vip", "regular"]
+    }
+
+    res = report.run(**params)
+
     print(res)

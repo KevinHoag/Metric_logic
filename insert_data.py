@@ -3,7 +3,7 @@ from random import randint, choice
 from pymongo import MongoClient
 from faker import Faker
 
-client = MongoClient("mongodb://localhost:28000/")
+client = MongoClient("mongodb://localhost:27017/")
 db = client["distill_db"]
 
 # Define time range
@@ -64,6 +64,7 @@ def generate_metadata():
         "joinDate": fake.date_between(start_date="-10y", end_date="today").strftime("%Y-%m-%d"),
         "groupId": fake.uuid4()[:8],  # Simulating a unique group ID
         "groupName": choice(["Downtown Branch", "Uptown Mall", "Central Store"]),
+        "status": choice(["active", "inactive"]),
         "avatar": fake.image_url(),
         "address": fake.address(),
         "notes": fake.sentence()

@@ -3,7 +3,7 @@ from random import randint, choice
 from pymongo import MongoClient
 from faker import Faker
 
-client = MongoClient("mongodb://localhost:27017/")
+client = MongoClient("mongodb://localhost:28000/")
 db = client["distill_db"]
 
 # Define time range

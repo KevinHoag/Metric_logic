@@ -226,7 +226,7 @@ if __name__ == "__main__":
         "params_order": "desc",
         "params_groupIds": ["CG-5", "CG-2"],
         "params_visitDateFrom": "2021-02-17T23:59:59.999Z",
-        "params_visitDateTo": "2025-02-17T23:59:59.999Z",
+        "params_visitDateTo": "2025-03-17T23:59:59.999Z",
         "params_tags": ["vip", "regular"]
     }
 

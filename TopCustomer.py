@@ -52,19 +52,14 @@ class ValidateParams:
             return func(instance, *args, **kwargs)
         return wrapper
 
-
 class TopCustomerMetric:
-    """
-    Top khách hàng thân thiết
-    """
-    
     def __init__(self):
         """Initialize required parameters"""
         self.required_params = [
-            "params_startTime", 
-            "params_dueTime", 
-            "params_cameraIds", 
-            "params_baseTime",
+            "param_startTime", 
+            "param_dueTime", 
+            "param_groupIds", 
+            "param_baseTime",
             "host", 
             "port"
         ]
@@ -92,26 +87,32 @@ class TopCustomerMetric:
         
         # Validate base_time parameter
         valid_base_times = ['hourly', 'daily', 'weekly', 'monthly', 'yearly']
-        if kwargs["params_baseTime"] not in valid_base_times:
-            raise ValueError(f"Invalid base_time: {kwargs['params_baseTime']}. Must be one of {valid_base_times}")
+        if kwargs["param_baseTime"] not in valid_base_times:
+            raise ValueError(f"Invalid base_time: {kwargs['param_baseTime']}. Must be one of {valid_base_times}")
         
         # Validate limit parameter
-        limit = int(kwargs.get("params_limit", 5))
+        limit = int(kwargs.get("param_limit", 5))
         if limit <= 0:
             raise ValueError("Limit must be a positive number")
         
         # Convert string timestamps to datetime objects
         start_datetime = self.ensure_timezone(
-            datetime.datetime.fromisoformat(kwargs["params_startTime"].replace('Z', '+00:00'))
+            datetime.datetime.fromisoformat(kwargs["param_startTime"].replace('Z', '+00:00'))
         )
         due_datetime = self.ensure_timezone(
-            datetime.datetime.fromisoformat(kwargs["params_dueTime"].replace('Z', '+00:00'))
+            datetime.datetime.fromisoformat(kwargs["param_dueTime"].replace('Z', '+00:00'))
         )
         
         # Parse camera IDs
-        camera_ids = kwargs["params_cameraIds"]
-        if isinstance(camera_ids, str):
-            camera_ids = camera_ids.split(',')
+        camera_ids = mongo_client.find(
+            db_name=kwargs["db"],
+            col_name="cameras",
+            query={
+                "group_id": {"$in": kwargs['param_groupIds']}
+            }
+        )["result"]
+        camera_ids = list(camera_ids)
+        camera_ids = [camera["camera_id"] for camera in camera_ids]
         
         # Get face events within the time range
         face_events = mongo_client.find(
@@ -237,59 +238,28 @@ class ClassSerializer:
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='Top Customer Metric')
-    # parser.add_argument('--start-time', required=True, help='Start time in ISO format')
-    # parser.add_argument('--due-time', required=True, help='Due time in ISO format')
-    # parser.add_argument('--camera-ids', required=True, help='Comma-separated list of camera IDs')
-    # parser.add_argument('--base-time', required=True, 
-    #                     choices=['hourly', 'daily', 'weekly', 'monthly', 'yearly'],
-    #                     help='Time block unit')
-    # parser.add_argument('--limit', type=int, default=5, help='Limit number of customers')
-    # parser.add_argument('--host', default='localhost', help='MongoDB host')
-    # parser.add_argument('--port', type=int, default=27017, help='MongoDB port')
-    # parser.add_argument('--username', default='', help='MongoDB username')
-    # parser.add_argument('--password', default='', help='MongoDB password')
-    # parser.add_argument('--db', default='distill_db', help='MongoDB database name')
-    # parser.add_argument('--auth', default='admin', help='MongoDB auth database')
-    # parser.add_argument('--output', help='Output file path (JSON)')
-    
-    # args = parser.parse_args()
-    
-    try:
-        # Example usage
-        serialize_class = ClassSerializer.serialize(TopCustomerMetric)
-        # print("Serialized Data:\n", serialize_class)
+    # Example usage
+    serialize_class = ClassSerializer.serialize(TopCustomerMetric)
+    # print("Serialized Data:\n", serialize_class)
 
-        # Deserialize the class definition
-        deserialized_class = ClassSerializer.deserialize(serialize_class)
-        # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
+    # Deserialize the class definition
+    deserialized_class = ClassSerializer.deserialize(serialize_class)
+    # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
 
-        # Use the deserialized class
-        metric = deserialized_class()
-        
-        params = {
-            "username": "",
-            "password": "",
-            "host": "localhost",
-            "port": 28000,
-            "db": "distill_db",
-            "auth": "admin",
-            "params_startTime": "2021-02-17T23:59:59.999Z",
-            "params_dueTime": "2025-02-17T23:59:59.999Z",
-            "params_cameraIds": ["CAM-5", "CAM-2", "CAM-1"],
-            "params_baseTime": "hourly",
-            "params_limit": 4
-        }
-        
-        result = metric.run(**params)
-        print(result)
-        
-        # if args.output:
-        #     with open(args.output, 'w') as f:
-        #         json.dump(result, f, indent=2, default=str)
-        #     print(f"Results saved to {args.output}")
-        # else:
-        #     print(json.dumps(result, indent=2, default=str))
-            
-    except Exception as e:
-        print(f"Error: {e}")
+    # Use the deserialized class
+    metric = deserialized_class()
+    
+    result = metric.run(
+        username="",
+        password="",
+        # host="172.21.5.197",
+        host="localhost",
+        port=28000,
+        db="distill_db",
+        auth=None,
+        param_baseTime = 'daily',
+        param_groupIds = ["CG-1"],
+        param_startTime = "2025-02-15T23:59:59.999Z",
+        param_dueTime = "2025-02-21T23:59:59.999Z"
+    )
+    print(result)

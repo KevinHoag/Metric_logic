@@ -62,10 +62,10 @@ class EmployeeCountMetric:
     def __init__(self):
         """Initialize required parameters"""
         self.required_params = [
-            "params_startTime", 
-            "params_dueTime", 
-            "params_cameraIds", 
-            "params_baseTime",
+            "param_startTime", 
+            "param_dueTime", 
+            "param_cameraIds", 
+            "param_baseTime",
             "host", 
             "port"
         ]
@@ -139,22 +139,28 @@ class EmployeeCountMetric:
         
         # Validate base_time parameter
         valid_base_times = ['hourly', 'daily', 'weekly', 'monthly', 'yearly']
-        base_time = kwargs["params_baseTime"]
+        base_time = kwargs["param_baseTime"]
         if base_time not in valid_base_times:
             raise ValueError(f"Invalid base_time: {base_time}. Must be one of {valid_base_times}")
         
         # Convert string timestamps to datetime objects
         start_datetime = self.ensure_timezone(
-            datetime.datetime.fromisoformat(kwargs["params_startTime"].replace('Z', '+00:00'))
+            datetime.datetime.fromisoformat(kwargs["param_startTime"].replace('Z', '+00:00'))
         )
         due_datetime = self.ensure_timezone(
-            datetime.datetime.fromisoformat(kwargs["params_dueTime"].replace('Z', '+00:00'))
+            datetime.datetime.fromisoformat(kwargs["param_dueTime"].replace('Z', '+00:00'))
         )
         
         # Parse camera IDs
-        camera_ids = kwargs["params_cameraIds"]
-        if isinstance(camera_ids, str):
-            camera_ids = camera_ids.split(',')
+        camera_ids = mongo_client.find(
+            db_name=kwargs["db"],
+            col_name="cameras",
+            query={
+                "group_id": {"$in": kwargs['param_groupIds']}
+            }
+        )["result"]
+        camera_ids = list(camera_ids)
+        camera_ids = [camera["camera_id"] for camera in camera_ids]
         
         # Generate time blocks
         time_blocks = self.generate_time_blocks(start_datetime, due_datetime, base_time)
@@ -297,58 +303,41 @@ class ClassSerializer:
 
 
 if __name__ == "__main__":
-    # parser = argparse.ArgumentParser(description='Employee Count Metric')
-    # parser.add_argument('--start-time', required=True, help='Start time in ISO format')
-    # parser.add_argument('--due-time', required=True, help='Due time in ISO format')
-    # parser.add_argument('--camera-ids', required=True, help='Comma-separated list of camera IDs')
-    # parser.add_argument('--base-time', required=True, 
-    #                     choices=['hourly', 'daily', 'weekly', 'monthly', 'yearly'],
-    #                     help='Time block unit')
-    # parser.add_argument('--host', default='localhost', help='MongoDB host')
-    # parser.add_argument('--port', type=int, default=27017, help='MongoDB port')
-    # parser.add_argument('--username', default='', help='MongoDB username')
-    # parser.add_argument('--password', default='', help='MongoDB password')
-    # parser.add_argument('--db', default='distill_db', help='MongoDB database name')
-    # parser.add_argument('--auth', default='admin', help='MongoDB auth database')
-    # parser.add_argument('--output', help='Output file path (JSON)')
-    
-    # args = parser.parse_args()
-    
-    try:
-        # Example usage
-        serialize_class = ClassSerializer.serialize(EmployeeCountMetric)
-        # print("Serialized Data:\n", serialize_class)
+    # Example usage
+    serialize_class = ClassSerializer.serialize(EmployeeCountMetric)
+    # print("Serialized Data:\n", serialize_class)
 
-        # Deserialize the class definition
-        deserialized_class = ClassSerializer.deserialize(serialize_class)
-        # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
+    # Deserialize the class definition
+    deserialized_class = ClassSerializer.deserialize(serialize_class)
+    # print("Deserialized Class:\n", inspect.getsource(deserialized_class))
 
-        # Use the deserialized class
-        metric = deserialized_class()
+    # Use the deserialized class
+    metric = deserialized_class()
+    
+    params = {
+        "username": "",
+        "password": "",
+        "host": "localhost",
+        "port": 28000,
+        "db": "distill_db",
+        "auth": "admin",
+        "param_startTime": "2025-02-16T23:59:59.999Z",
+        "param_dueTime": "2025-02-17T23:59:59.999Z",
+        "param_cameraIds": ["CAM-5", "CAM-2", "CAM-1", "CAM-3", "CAM-4"],
+        "param_baseTime": "hourly",
+    }
+    
+    result = metric.run(
+        username="",
+        password="",
+        host="locahost",
+        port=28000,
+        db="distill_db",
+        auth=None,
+        param_baseTime = 'daily',
+        param_groupIds = ["CG-5", "CG-2"],
+        param_startTime = "2025-02-15T23:59:59.999Z",
+        param_dueTime = "2025-02-21T23:59:59.999Z"
+    )
+    print(result)
         
-        params = {
-            "username": "",
-            "password": "",
-            "host": "localhost",
-            "port": 28000,
-            "db": "distill_db",
-            "auth": "admin",
-            "params_startTime": "2025-02-16T23:59:59.999Z",
-            "params_dueTime": "2025-02-17T23:59:59.999Z",
-            "params_cameraIds": ["CAM-5", "CAM-2", "CAM-1", "CAM-3", "CAM-4"],
-            "params_baseTime": "hourly",
-        }
-        
-        result = metric.run(**params)
-        for item in result['results']:
-            print(item)
-        
-        # if args.output:
-        #     with open(args.output, 'w') as f:
-        #         json.dump(result, f, indent=2, default=str)
-        #     print(f"Results saved to {args.output}")
-        # else:
-        #     print(json.dumps(result, indent=2, default=str))
-            
-    except Exception as e:
-        print(f"Error: {e}")
